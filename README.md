@@ -55,7 +55,7 @@ and describe the layout yourself:
 uv run vmem info --core ram.bin --arch arm64 --below-4g 0xC0000000
 ```
 
-### This Mac: ready-made Win11 ARM64 VM
+### Apple Silicon macOS (HVF): ready-made Win11 ARM64 VM
 
 `scripts/qemu-win11.sh` creates a headless QEMU/HVF VM plus an unattended
 install (Pro, local account `vmem`/`vmem`, TPM/Secure Boot checks bypassed):
@@ -70,7 +70,7 @@ uv run vmem ps   --core ~/VMs/vmem-win11/win.elf
 
 Other commands: `shot [png]`, `status`, `type <text>`, `key <key>`, `stop`.
 
-What this platform forced (all handled by the script now):
+What this setup had to work around (all handled by the script now):
 
 - **ISO on USB CD.** ArmVirtQemu has no AHCI driver and Windows ARM64 WinPE
   has no PIIX-IDE driver, so a CD on the default bus boots but is unreadable
@@ -80,7 +80,7 @@ What this platform forced (all handled by the script now):
   key at the "Press any key to boot from CD or DVD" prompt.
 - **Answer file on a tiny ISO9660 disc** (second USB CD). Windows Setup picks
   it up on its own; FAT stick images built with `vvfat`/`hdiutil`/`mtools` all
-  failed in WinPE on this build.
+  failed in WinPE with QEMU 11.1 on macOS.
 - **UDF ISO caveat:** the retail ISO is UDF, so `xorriso` cannot re-master it
   (it only copies the ISO9660 stub). Hence the separate answer-file disc.
 - The retail ISO is index 1=Home, 2=Home SL, 3=Pro; the generic Pro key is
