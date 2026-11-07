@@ -89,6 +89,7 @@ class QmpClient:
             ".": "dot", "-": "minus", "/": "slash", "_": "shift-minus",
             '"': "shift-apostrophe", "=": "equal", ",": "comma",
             ";": "semicolon", "'": "apostrophe", "\n": "ret",
+            "(": "shift-9", ")": "shift-0", "|": "shift-backslash",
         }
         for ch in text:
             if ch.isalnum():
