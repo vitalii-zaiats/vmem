@@ -15,6 +15,11 @@ def _default_profile(arch: str) -> str:
 
 
 def _open(args, arch: str | None = None) -> Memory:
+    if getattr(args, "vm_pid", None):
+        return Memory.open_procmem(
+            args.vm_pid, below_4g=args.below_4g,
+            arch=arch or args.arch or "x86_64",
+        )
     if args.qmp:
         from .qemu import QmpClient, QmpRam
 
@@ -51,6 +56,8 @@ def _windows(args) -> Windows:
     prof = load_profile(args.profile) if args.profile else None
     if prof is None and args.qmp:
         prof = load_profile(_default_profile(args.arch or "arm64"))
+    if prof is None and getattr(args, "vm_pid", None):
+        prof = load_profile(_default_profile(args.arch or "x86_64"))
     mem = _open(args, arch=args.arch or (prof.arch if prof else None))
     if prof is None:
         prof = load_profile(_default_profile(mem.arch))
@@ -177,6 +184,8 @@ def build_parser() -> argparse.ArgumentParser:
         g = p.add_mutually_exclusive_group(required=True)
         g.add_argument("--core", help="ELF core dump or raw physical memory dump")
         g.add_argument("--qmp", help="live QEMU QMP socket")
+        g.add_argument("--vm-pid", dest="vm_pid", type=int,
+                       help="live Linux QEMU pid (/proc/<pid>/mem)")
         p.add_argument("--arch", choices=["x86_64", "arm64"], default=None)
         p.add_argument("--gpa-base", type=lambda s: int(s, 0), default=0,
                        help="raw dumps only: GPA of file offset 0")

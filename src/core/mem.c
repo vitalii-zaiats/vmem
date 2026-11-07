@@ -149,6 +149,11 @@ void vmem_close(vmem_mem *m)
     free(m);
 }
 
+void vmem_set_arch(vmem_mem *m, vmem_arch arch)
+{
+    if (m && arch != VMEM_ARCH_UNKNOWN) m->arch = arch;
+}
+
 vmem_arch vmem_arch_of(const vmem_mem *m) { return m ? m->arch : VMEM_ARCH_UNKNOWN; }
 size_t vmem_segment_count(const vmem_mem *m) { return m ? m->nsegs : 0; }
 const vmem_segment *vmem_segments(const vmem_mem *m) { return m ? m->segs : NULL; }

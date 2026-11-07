@@ -195,17 +195,26 @@ static PyObject *Memory_open_elf(PyObject *cls, PyObject *args, PyObject *kw)
 static PyObject *Memory_open_procmem(PyObject *cls, PyObject *args,
                                      PyObject *kw)
 {
-    static char *kwlist[] = {"pid", "below_4g", NULL};
+    static char *kwlist[] = {"pid", "below_4g", "arch", NULL};
     int pid;
     unsigned long long below_4g = 0;
+    const char *arch_s = "x86_64";
+    vmem_arch arch;
     int err = 0;
     vmem_mem *m;
 
     (void)cls;
-    if (!PyArg_ParseTupleAndKeywords(args, kw, "i|K", kwlist, &pid, &below_4g))
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "i|Ks", kwlist, &pid,
+                                     &below_4g, &arch_s))
         return NULL;
+    arch = arch_from_string(arch_s);
+    if (arch == VMEM_ARCH_UNKNOWN) {
+        PyErr_SetString(PyExc_ValueError, "arch must be 'x86_64' or 'arm64'");
+        return NULL;
+    }
     m = vmem_open_procmem_auto(pid, below_4g, &err);
     if (!m) { set_error(err); return NULL; }
+    vmem_set_arch(m, arch);
     return memory_from(m);
 }
 
@@ -273,11 +282,18 @@ static PyObject *Memory_open_procmem_segments(PyObject *cls, PyObject *args)
     PyObject *seq;
     Py_ssize_t n, i;
     vmem_segment *segs;
+    const char *arch_s = "x86_64";
+    vmem_arch arch;
     int err = 0;
     vmem_mem *m;
 
     (void)cls;
-    if (!PyArg_ParseTuple(args, "iO", &pid, &seq)) return NULL;
+    if (!PyArg_ParseTuple(args, "iO|s", &pid, &seq, &arch_s)) return NULL;
+    arch = arch_from_string(arch_s);
+    if (arch == VMEM_ARCH_UNKNOWN) {
+        PyErr_SetString(PyExc_ValueError, "arch must be 'x86_64' or 'arm64'");
+        return NULL;
+    }
     seq = PySequence_Fast(seq, "segments must be a sequence");
     if (!seq) return NULL;
     n = PySequence_Fast_GET_SIZE(seq);
@@ -301,6 +317,7 @@ static PyObject *Memory_open_procmem_segments(PyObject *cls, PyObject *args)
     m = vmem_open_procmem(pid, segs, (size_t)n, &err);
     free(segs);
     if (!m) { set_error(err); return NULL; }
+    vmem_set_arch(m, arch);
     return memory_from(m);
 }
 
@@ -420,15 +437,20 @@ static PyObject *Memory_scan(MemoryObject *self, PyObject *args, PyObject *kw)
 static PyObject *Memory_space(MemoryObject *self, PyObject *args)
 {
     unsigned long long base0, base1 = 0;
+    const char *arch_s = NULL;
+    vmem_arch arch;
     vmem_space *s;
-    PyObject *obj;
 
-    if (!PyArg_ParseTuple(args, "K|K", &base0, &base1)) return NULL;
-    s = vmem_space_new(self->mem, vmem_arch_of(self->mem), base0, base1,
-                       base1 != 0);
+    if (!PyArg_ParseTuple(args, "K|Kz", &base0, &base1, &arch_s)) return NULL;
+    arch = arch_s ? arch_from_string(arch_s) : vmem_arch_of(self->mem);
+    if (arch == VMEM_ARCH_UNKNOWN) {
+        PyErr_SetString(PyExc_ValueError,
+                        "unknown arch; pass arch='x86_64' or 'arm64'");
+        return NULL;
+    }
+    s = vmem_space_new(self->mem, arch, base0, base1, base1 != 0);
     if (!s) return PyErr_NoMemory();
-    obj = space_from(s, self);
-    return obj;
+    return space_from(s, self);
 }
 
 static PyObject *Memory_get_arch(MemoryObject *self, void *closure)

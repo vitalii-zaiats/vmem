@@ -94,6 +94,10 @@ vmem_mem *vmem_open_custom(vmem_read_at_cb read_at, vmem_destroy_cb destroy,
 
 void vmem_close(vmem_mem *m);
 
+/* Override the architecture of an already opened memory object (useful for
+ * backends that cannot infer it, such as /proc/<pid>/mem). */
+void vmem_set_arch(vmem_mem *m, vmem_arch arch);
+
 /* ------------------------------------------------------------------ */
 /* Introspection                                                      */
 /* ------------------------------------------------------------------ */

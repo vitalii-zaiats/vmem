@@ -142,7 +142,22 @@ mem = Memory.open_procmem_segments(pid, [(0, 0x80000000, host_start), ...])
 ```
 
 Anonymous mappings cannot be `mmap`ed from another process, so this path reads
-through `/proc/<pid>/mem`; the memfd path is a plain `pread`.
+through `/proc/<pid>/mem`; the memfd path is a plain `pread`. The same pipeline
+works from the CLI:
+
+```sh
+uv run vmem ps --vm-pid <qemu-pid> --arch x86_64
+uv run vmem ps --vm-pid <qemu-pid> --arch x86_64 --profile my-win11-x64
+```
+
+Unlike the QMP path this does not need `--system-pa`: a full 4 GiB scan over
+`pread` is fast enough to find the System EPROCESS on the fly. Make sure the
+profile matches the guest build — the shipped `win11-25h2-x64` values are
+carried over from the original tool and unverified. Regenerate with:
+
+```sh
+uv run python -m vmem.symbols ntoskrnl.exe --arch x86_64
+```
 
 ## CLI
 
