@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vmem"
+version = "0.1.0"
+description = "Hypervisor-agnostic guest physical/virtual memory access for Windows guests"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+vmem = "vmem.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["vmem"]
+
+[tool.setuptools.package-data]
+vmem = ["profiles/*.toml", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

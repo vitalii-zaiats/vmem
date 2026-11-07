@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+*.dmp
+*.elf
+*.raw
+dumps/
+.pytest_cache/
+tests/c/test_core
+*.dSYM/

@@ -1,0 +1,13 @@
+name = "win11-26300-arm64"
+arch = "arm64"
+# Windows 11 ARM64, ntoskrnl build 26300.9457.
+# Extracted from ntkrnlmp.pdb (GUID 7A9F162A39E89C67CD02CF2126D51A65, age 1).
+[offsets]
+directory_table_base = 0x028
+unique_process_id    = 0x1C0
+active_process_links = 0x1C8
+image_file_name      = 0x328
+virtual_size         = 0x218
+active_threads       = 0x370
+peb                  = 0x2D0
+inherited_from_unique_process_id = 0x2C0
