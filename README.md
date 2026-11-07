@@ -86,6 +86,46 @@ What this setup had to work around (all handled by the script now):
 - The retail ISO is index 1=Home, 2=Home SL, 3=Pro; the generic Pro key is
   used so setup doesn't stop at the product-key page.
 
+### Live reads over QMP (no snapshot)
+
+The same `ActiveProcessLinks` walk runs against a *running* VM. QMP is used for
+reads (`xp /512gx`, one 4 KiB page per round trip, page-cached), so no dump file
+is written during the walk.
+
+A passive reader cannot cheaply discover the System `EPROCESS` anchor: finding
+it normally means scanning 4 GiB, which is impractical over QMP. The anchor is
+stable for the life of the boot, so take it once from a dump:
+
+```sh
+./scripts/qemu-win11.sh dump
+uv run vmem ps --core ~/VMs/vmem-win11/win.elf     # prints system_pa=0x...
+```
+
+Then read the live guest directly (no further snapshots):
+
+```sh
+uv run vmem ps --qmp ~/VMs/vmem-win11/qmp.sock --system-pa 0x10d0b4080
+```
+
+```python
+from vmem import Memory, Windows, load_profile
+from vmem.qemu import QmpClient, QmpRam
+
+qmp = QmpClient("~/VMs/vmem-win11/qmp.sock")
+ram = QmpRam(qmp)                       # callable(offset, length) -> bytes
+mem = Memory.open_callback(ram, [(0x40000000, 4 << 30, 0x40000000)],
+                           arch="arm64")
+win = Windows(mem, load_profile("win11-26300-arm64").as_dict(),
+              system_pa=0x10d0b4080)
+for p in win.processes():
+    ...
+```
+
+A guest reboot changes the anchor, so re-derive it. For snapshot-free anchoring
+too, start QEMU with `-object memory-backend-file,...,share=on
+-machine memory-backend=mem` and map the RAM file live; a full scan is then
+cheap and the anchor can be discovered on the fly.
+
 ### VirtualBox
 
 `VBoxManage debugvm <vm> dumpvmcore --filename=core.elf` produces the same ELF

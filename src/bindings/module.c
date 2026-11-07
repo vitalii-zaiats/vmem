@@ -63,6 +63,50 @@ static int path_converter(PyObject *obj, void *result)
 }
 
 /* ------------------------------------------------------------------ */
+/* Python-callback backed physical memory source                      */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    PyObject *fn; /* callable(offset:int, length:int) -> bytes */
+} py_read_ctx;
+
+static int py_read_at(void *ctx, uint64_t off, void *buf, size_t len,
+                      size_t *got)
+{
+    py_read_ctx *c = ctx;
+    PyObject *res = PyObject_CallFunction(c->fn, "KK",
+                                          (unsigned long long)off,
+                                          (unsigned long long)len);
+    Py_ssize_t n;
+
+    if (!res) {
+        /* Treat a failing read as an unmapped page; the core zero-fills. */
+        PyErr_Clear();
+        *got = 0;
+        return VMEM_EIO;
+    }
+    if (!PyBytes_Check(res)) {
+        Py_DECREF(res);
+        PyErr_Clear();
+        *got = 0;
+        return VMEM_EIO;
+    }
+    n = PyBytes_GET_SIZE(res);
+    if ((size_t)n > len) n = (Py_ssize_t)len;
+    memcpy(buf, PyBytes_AS_STRING(res), (size_t)n);
+    Py_DECREF(res);
+    *got = (size_t)n;
+    return VMEM_OK;
+}
+
+static void py_read_destroy(void *ctx)
+{
+    py_read_ctx *c = ctx;
+    Py_XDECREF(c->fn);
+    free(c);
+}
+
+/* ------------------------------------------------------------------ */
 /* Memory                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -162,6 +206,64 @@ static PyObject *Memory_open_procmem(PyObject *cls, PyObject *args,
         return NULL;
     m = vmem_open_procmem_auto(pid, below_4g, &err);
     if (!m) { set_error(err); return NULL; }
+    return memory_from(m);
+}
+
+static PyObject *Memory_open_callback(PyObject *cls, PyObject *args,
+                                      PyObject *kw)
+{
+    static char *kwlist[] = {"callback", "segments", "arch", NULL};
+    PyObject *fn, *seq;
+    const char *arch_s;
+    vmem_arch arch;
+    Py_ssize_t n, i;
+    vmem_segment *segs;
+    py_read_ctx *ctx;
+    vmem_mem *m;
+    int err = 0;
+
+    (void)cls;
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "OOs", kwlist, &fn, &seq,
+                                     &arch_s))
+        return NULL;
+    if (!PyCallable_Check(fn)) {
+        PyErr_SetString(PyExc_TypeError, "callback must be callable");
+        return NULL;
+    }
+    arch = arch_from_string(arch_s);
+    if (arch == VMEM_ARCH_UNKNOWN) {
+        PyErr_SetString(PyExc_ValueError, "arch must be 'x86_64' or 'arm64'");
+        return NULL;
+    }
+    seq = PySequence_Fast(seq, "segments must be a sequence");
+    if (!seq) return NULL;
+    n = PySequence_Fast_GET_SIZE(seq);
+    segs = calloc((size_t)(n ? n : 1), sizeof(*segs));
+    if (!segs) { Py_DECREF(seq); return PyErr_NoMemory(); }
+
+    for (i = 0; i < n; i++) {
+        PyObject *item = PySequence_Fast_GET_ITEM(seq, i);
+        unsigned long long gpa, size, off;
+        if (!PyArg_ParseTuple(item, "KKK", &gpa, &size, &off)) {
+            free(segs);
+            Py_DECREF(seq);
+            return NULL;
+        }
+        segs[i].gpa = gpa;
+        segs[i].size = size;
+        segs[i].file_offset = off;
+        segs[i].ptr = NULL;
+    }
+    Py_DECREF(seq);
+
+    ctx = calloc(1, sizeof(*ctx));
+    if (!ctx) { free(segs); return PyErr_NoMemory(); }
+    Py_INCREF(fn);
+    ctx->fn = fn;
+    m = vmem_open_custom(py_read_at, py_read_destroy, ctx, segs, (size_t)n,
+                         arch, &err);
+    free(segs);
+    if (!m) { py_read_destroy(ctx); set_error(err); return NULL; }
     return memory_from(m);
 }
 
@@ -622,10 +724,12 @@ static void Windows_dealloc(WindowsObject *self)
 
 static int Windows_init(WindowsObject *self, PyObject *args, PyObject *kw)
 {
-    static char *kwlist[] = {"memory", "offsets", NULL};
+    static char *kwlist[] = {"memory", "offsets", "system_pa", "kernel_base",
+                             NULL};
     MemoryObject *mem;
     PyObject *dict;
     vmem_eprocess_offsets off = {0};
+    unsigned long long system_pa = 0, kernel_base = 0;
     int err = 0;
     struct { const char *key; uint32_t *field; } map[] = {
         {"directory_table_base", &off.directory_table_base},
@@ -639,8 +743,9 @@ static int Windows_init(WindowsObject *self, PyObject *args, PyObject *kw)
                                  &off.inherited_from_unique_process_id},
     };
 
-    if (!PyArg_ParseTupleAndKeywords(args, kw, "O!O!", kwlist,
-                                     &MemoryType, &mem, &PyDict_Type, &dict))
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "O!O!|KK", kwlist,
+                                     &MemoryType, &mem, &PyDict_Type, &dict,
+                                     &system_pa, &kernel_base))
         return -1;
 
     for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++) {
@@ -655,6 +760,15 @@ static int Windows_init(WindowsObject *self, PyObject *args, PyObject *kw)
     if (self->win) { vmem_windows_free(self->win); self->win = NULL; }
     self->win = vmem_windows_new(mem->mem, &off, &err);
     if (!self->win) { set_error(err); return -1; }
+    if (system_pa) {
+        int rc = vmem_windows_seed(self->win, system_pa, kernel_base);
+        if (rc != VMEM_OK) {
+            PyErr_Format(PyExc_ValueError,
+                         "system_pa %#llx is not the System EPROCESS",
+                         system_pa);
+            return -1;
+        }
+    }
     Py_INCREF(mem);
     Py_XSETREF(self->mem, mem);
     return 0;
@@ -797,6 +911,7 @@ static PyMethodDef Memory_methods[] = {
     {"open_elf",  (PyCFunction)Memory_open_elf,  METH_VARARGS | METH_KEYWORDS | METH_STATIC, NULL},
     {"open_procmem", (PyCFunction)Memory_open_procmem, METH_VARARGS | METH_KEYWORDS | METH_STATIC, NULL},
     {"open_procmem_segments", (PyCFunction)Memory_open_procmem_segments, METH_VARARGS | METH_STATIC, NULL},
+    {"open_callback", (PyCFunction)Memory_open_callback, METH_VARARGS | METH_KEYWORDS | METH_STATIC, NULL},
     {"read",       (PyCFunction)Memory_read,       METH_VARARGS, NULL},
     {"read_exact", (PyCFunction)Memory_read_exact, METH_VARARGS, NULL},
     {"u8",  (PyCFunction)Memory_u8,  METH_VARARGS, NULL},

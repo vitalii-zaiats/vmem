@@ -14,12 +14,28 @@ def _default_profile(arch: str) -> str:
     return "win11-26300-arm64" if arch == "arm64" else "win11-25h2-x64"
 
 
-def _open(args) -> Memory:
+def _open(args, arch: str | None = None) -> Memory:
+    if args.qmp:
+        from .qemu import QmpClient, QmpRam
+
+        qmp = QmpClient(args.qmp)
+        size = args.ram_size
+        if not size:
+            try:
+                size = int(qmp.command("query-memory-size-summary")["base-memory"])
+            except Exception:
+                size = 4 << 30
+        ram = QmpRam(qmp)
+        return Memory.open_callback(
+            ram, [(args.ram_base, size, args.ram_base)],
+            arch=arch or args.arch or "arm64",
+        )
+
     path = pathlib.Path(args.core)
     with open(path, "rb") as f:
         magic = f.read(4)
     if magic == b"\x7fELF":
-        return Memory.open_elf(path, arch=args.arch)
+        return Memory.open_elf(path, arch=arch or args.arch)
     if not args.arch:
         raise SystemExit("flat dumps need --arch {x86_64,arm64}")
     return Memory.open_flat(path, arch=args.arch, gpa_base=args.gpa_base,
@@ -27,10 +43,19 @@ def _open(args) -> Memory:
 
 
 def _windows(args) -> Windows:
-    mem = _open(args)
-    name = args.profile or _default_profile(mem.arch)
-    prof = load_profile(name)
-    return Windows(mem, prof.as_dict())
+    if args.qmp and not args.system_pa:
+        raise SystemExit(
+            "live QMP needs --system-pa (take it from `vmem ps --core <dump>`); "
+            "scanning 4 GiB over QMP is impractical"
+        )
+    prof = load_profile(args.profile) if args.profile else None
+    if prof is None and args.qmp:
+        prof = load_profile(_default_profile(args.arch or "arm64"))
+    mem = _open(args, arch=args.arch or (prof.arch if prof else None))
+    if prof is None:
+        prof = load_profile(_default_profile(mem.arch))
+    return Windows(mem, prof.as_dict(), system_pa=args.system_pa,
+                   kernel_base=args.kernel_base)
 
 
 def _hexdump(data: bytes, base: int) -> str:
@@ -149,13 +174,22 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def core_args(p):
-        p.add_argument("--core", required=True,
-                       help="ELF core dump, or a raw physical memory dump")
+        g = p.add_mutually_exclusive_group(required=True)
+        g.add_argument("--core", help="ELF core dump or raw physical memory dump")
+        g.add_argument("--qmp", help="live QEMU QMP socket")
         p.add_argument("--arch", choices=["x86_64", "arm64"], default=None)
         p.add_argument("--gpa-base", type=lambda s: int(s, 0), default=0,
                        help="raw dumps only: GPA of file offset 0")
         p.add_argument("--below-4g", type=lambda s: int(s, 0), default=0,
                        help="raw dumps only: bytes below the 4 GiB hole")
+        p.add_argument("--ram-base", type=lambda s: int(s, 0), default=0x40000000,
+                       help="live QMP: GPA of guest RAM (default 0x40000000)")
+        p.add_argument("--ram-size", type=lambda s: int(s, 0), default=0,
+                       help="live QMP: RAM size (default: ask QEMU)")
+        p.add_argument("--system-pa", type=lambda s: int(s, 0), default=0,
+                       help="System EPROCESS physical address (live QMP anchor)")
+        p.add_argument("--kernel-base", type=lambda s: int(s, 0), default=0,
+                       help="override the kernel page-table base")
 
     p = sub.add_parser("info", help="describe a core dump")
     core_args(p)

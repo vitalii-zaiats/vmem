@@ -16,6 +16,7 @@ import re
 import socket
 import subprocess
 import time
+from collections import OrderedDict
 
 
 class QmpError(RuntimeError):
@@ -150,3 +151,62 @@ def qmp_from_pid(pid: int) -> pathlib.Path | None:
             if part.startswith("unix:"):
                 return pathlib.Path(part.split(":", 1)[1])
     return None
+
+
+def _parse_xp(text: str) -> bytes | None:
+    """Parse HMP ``xp /Ngx`` output into little-endian bytes."""
+    chunks = []
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        payload = line.split(":", 1)[1]
+        for token in payload.split():
+            token = token.strip()
+            if not token.startswith("0x"):
+                return None
+            chunks.append(int(token, 16).to_bytes(8, "little"))
+    return b"".join(chunks) if chunks else None
+
+
+class QmpRam:
+    """Live guest physical memory over QMP, with a 4 KiB page cache.
+
+    ``xp /512gx`` fetches one page per round trip, so walking the EPROCESS
+    list costs hundreds of milliseconds instead of thousands of round trips.
+    ---
+
+    Pass an instance to ``Memory.open_callback(ram, segments, arch="arm64")``.
+    """
+
+    def __init__(self, qmp: QmpClient, page_cache: int = 8192):
+        self.qmp = qmp
+        self.page_cache = page_cache
+        self._pages: OrderedDict[int, bytes] = OrderedDict()
+        self.qmp_reads = 0
+
+    def _page(self, page: int) -> bytes:
+        data = self._pages.get(page)
+        if data is not None:
+            self._pages.move_to_end(page)
+            return data
+        data = _parse_xp(self.qmp.human(f"xp /512gx {page:#x}")) or b""
+        if len(data) < 0x1000:
+            data = data + b"\0" * (0x1000 - len(data))
+        self.qmp_reads += 1
+        self._pages[page] = data
+        if len(self._pages) > self.page_cache:
+            self._pages.popitem(last=False)
+        return data
+
+    def __call__(self, offset: int, length: int) -> bytes:
+        out = bytearray(length)
+        pos = 0
+        while pos < length:
+            addr = offset + pos
+            page = addr & ~0xFFF
+            data = self._page(page)
+            start = addr - page
+            take = min(0x1000 - start, length - pos)
+            out[pos:pos + take] = data[start:start + take]
+            pos += take
+        return bytes(out)

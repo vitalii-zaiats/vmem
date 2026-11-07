@@ -135,6 +135,27 @@ int vmem_windows_find_system(vmem_windows *w)
 /* EPROCESS field extraction                                          */
 /* ------------------------------------------------------------------ */
 
+int vmem_windows_seed(vmem_windows *w, uint64_t system_pa, uint64_t kernel_base)
+{
+    if (!w || !system_pa) return VMEM_EINVAL;
+
+    if (w->off.unique_process_id) {
+        uint64_t pid = vmem_phys_u64(w->mem, system_pa + w->off.unique_process_id);
+        if (pid != 4) return VMEM_ENOENT;
+    }
+    if (!kernel_base) {
+        kernel_base = vmem_phys_u64(w->mem,
+                                    system_pa + w->off.directory_table_base);
+        kernel_base = vmem_mask_base(vmem_arch_of(w->mem), kernel_base);
+    }
+    if (!kernel_base) return VMEM_EINVAL;
+
+    w->system_pa = system_pa;
+    w->kernel_base = kernel_base;
+    w->found = 1;
+    return VMEM_OK;
+}
+
 static int fill_process(const vmem_windows *w, uint64_t base, uint64_t va,
                         vmem_process *p)
 {

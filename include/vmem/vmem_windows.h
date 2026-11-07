@@ -51,6 +51,13 @@ void vmem_windows_free(vmem_windows *w);
 /* Locate and validate the System (PID 4) EPROCESS.  Cached after first call. */
 int vmem_windows_find_system(vmem_windows *w);
 
+/*
+ * Skip the physical scan when the caller already knows System's EPROCESS
+ * (e.g. from an earlier dump).  kernel_base == 0 means "read it from the
+ * DirectoryTableBase field".
+ */
+int vmem_windows_seed(vmem_windows *w, uint64_t system_pa, uint64_t kernel_base);
+
 uint64_t vmem_windows_system_pa(const vmem_windows *w);
 uint64_t vmem_windows_kernel_base(const vmem_windows *w);
 int      vmem_windows_last_enum_method(const vmem_windows *w);
