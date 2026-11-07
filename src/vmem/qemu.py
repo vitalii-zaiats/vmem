@@ -15,6 +15,7 @@ import pathlib
 import re
 import socket
 import subprocess
+import time
 
 
 class QmpError(RuntimeError):
@@ -75,6 +76,37 @@ class QmpClient:
                              text):
             out[m.group(1).upper()] = int(m.group(2), 16)
         return out
+
+    def sendkey(self, key: str) -> None:
+        """Send one key (HMP syntax, e.g. 'a', 'ret', 'shift-semicolon')."""
+        self.human(f"sendkey {key}")
+
+    def type_text(self, text: str, *, delay: float = 0.04,
+                  enter: bool = True) -> None:
+        """Type ASCII into the guest.  Useful for the UEFI shell."""
+        keymap = {
+            " ": "spc", ":": "shift-semicolon", "\\": "backslash",
+            ".": "dot", "-": "minus", "/": "slash", "_": "shift-minus",
+            '"': "shift-apostrophe", "=": "equal", ",": "comma",
+            ";": "semicolon", "'": "apostrophe", "\n": "ret",
+        }
+        for ch in text:
+            if ch.isalnum():
+                key = ch.lower()
+            elif ch in keymap:
+                key = keymap[ch]
+            else:
+                raise ValueError(f"cannot type {ch!r}")
+            self.sendkey(key)
+            time.sleep(delay)
+        if enter:
+            self.sendkey("ret")
+
+    def screendump(self, path: str | pathlib.Path, *,
+                   fmt: str = "png") -> str:
+        """Capture the current display (QEMU 7.2+ supports PNG)."""
+        self.command("screendump", filename=str(path), format=fmt)
+        return str(path)
 
     def close(self) -> None:
         try:

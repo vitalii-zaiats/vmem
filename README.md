@@ -55,6 +55,37 @@ and describe the layout yourself:
 uv run vmem info --core ram.bin --arch arm64 --below-4g 0xC0000000
 ```
 
+### This Mac: ready-made Win11 ARM64 VM
+
+`scripts/qemu-win11.sh` creates a headless QEMU/HVF VM plus an unattended
+install (Pro, local account `vmem`/`vmem`, TPM/Secure Boot checks bypassed):
+
+```sh
+./scripts/qemu-win11.sh install     # one-time, ~20-30 min
+./scripts/qemu-win11.sh run         # boot installed Windows, QMP ready
+./scripts/qemu-win11.sh dump        # writes ~/VMs/vmem-win11/win.elf
+uv run vmem info --core ~/VMs/vmem-win11/win.elf
+uv run vmem ps   --core ~/VMs/vmem-win11/win.elf
+```
+
+Other commands: `shot [png]`, `status`, `type <text>`, `key <key>`, `stop`.
+
+What this platform forced (all handled by the script now):
+
+- **ISO on USB CD.** ArmVirtQemu has no AHCI driver and Windows ARM64 WinPE
+  has no PIIX-IDE driver, so a CD on the default bus boots but is unreadable
+  to setup. A USB CD is seen by both firmware and WinPE.
+- **UEFI boot order is empty**, so the firmware lands in the UEFI shell. From
+  the mapping table run `fsN:\efi\boot\bootaa64.efi` (e.g. `fs1:`) and press a
+  key at the "Press any key to boot from CD or DVD" prompt.
+- **Answer file on a tiny ISO9660 disc** (second USB CD). Windows Setup picks
+  it up on its own; FAT stick images built with `vvfat`/`hdiutil`/`mtools` all
+  failed in WinPE on this build.
+- **UDF ISO caveat:** the retail ISO is UDF, so `xorriso` cannot re-master it
+  (it only copies the ISO9660 stub). Hence the separate answer-file disc.
+- The retail ISO is index 1=Home, 2=Home SL, 3=Pro; the generic Pro key is
+  used so setup doesn't stop at the product-key page.
+
 ### VirtualBox
 
 `VBoxManage debugvm <vm> dumpvmcore --filename=core.elf` produces the same ELF
