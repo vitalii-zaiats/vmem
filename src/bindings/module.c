@@ -359,6 +359,18 @@ static PyObject *Memory_read_exact(MemoryObject *self, PyObject *args)
     return b;
 }
 
+static PyObject *Memory_write(MemoryObject *self, PyObject *args)
+{
+    unsigned long long gpa;
+    Py_buffer view;
+    int rc;
+
+    if (!PyArg_ParseTuple(args, "Ky*", &gpa, &view)) return NULL;
+    rc = vmem_write_phys(self->mem, gpa, view.buf, (size_t)view.len);
+    PyBuffer_Release(&view);
+    if (rc != VMEM_OK) { set_error(rc); return NULL; }
+    Py_RETURN_NONE;
+}
 #define MEM_READ_INT(name, ctype, conv)                                  \
     static PyObject *Memory_##name(MemoryObject *self, PyObject *args)   \
     {                                                                    \
@@ -614,6 +626,19 @@ static PyObject *Space_read_exact(SpaceObject *self, PyObject *args)
         Py_RETURN_NONE;
     }
     return b;
+}
+
+static PyObject *Space_write(SpaceObject *self, PyObject *args)
+{
+    unsigned long long va;
+    Py_buffer view;
+    int rc;
+
+    if (!PyArg_ParseTuple(args, "Ky*", &va, &view)) return NULL;
+    rc = vmem_space_write(self->space, va, view.buf, (size_t)view.len);
+    PyBuffer_Release(&view);
+    if (rc != VMEM_OK) { set_error(rc); return NULL; }
+    Py_RETURN_NONE;
 }
 
 #define SPACE_READ_INT(name, ctype, conv)                                \
@@ -936,6 +961,7 @@ static PyMethodDef Memory_methods[] = {
     {"open_callback", (PyCFunction)Memory_open_callback, METH_VARARGS | METH_KEYWORDS | METH_STATIC, NULL},
     {"read",       (PyCFunction)Memory_read,       METH_VARARGS, NULL},
     {"read_exact", (PyCFunction)Memory_read_exact, METH_VARARGS, NULL},
+    {"write",      (PyCFunction)Memory_write,      METH_VARARGS, NULL},
     {"u8",  (PyCFunction)Memory_u8,  METH_VARARGS, NULL},
     {"u16", (PyCFunction)Memory_u16, METH_VARARGS, NULL},
     {"u32", (PyCFunction)Memory_u32, METH_VARARGS, NULL},
@@ -989,6 +1015,7 @@ static PyMethodDef Space_methods[] = {
     {"translate",  (PyCFunction)Space_translate,  METH_VARARGS, NULL},
     {"read",       (PyCFunction)Space_read,       METH_VARARGS, NULL},
     {"read_exact", (PyCFunction)Space_read_exact, METH_VARARGS, NULL},
+    {"write",      (PyCFunction)Space_write,      METH_VARARGS, NULL},
     {"u8",  (PyCFunction)Space_u8,  METH_VARARGS, NULL},
     {"u16", (PyCFunction)Space_u16, METH_VARARGS, NULL},
     {"u32", (PyCFunction)Space_u32, METH_VARARGS, NULL},

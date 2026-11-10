@@ -10,6 +10,8 @@
 
 typedef int (*vmem_read_at_fn)(void *ctx, uint64_t off, void *buf, size_t len,
                                size_t *got);
+typedef int (*vmem_write_at_fn)(void *ctx, uint64_t off, const void *buf,
+                                size_t len, size_t *done);
 typedef void (*vmem_destroy_fn)(void *ctx);
 
 struct vmem_mem {
@@ -20,6 +22,7 @@ struct vmem_mem {
     uint64_t max_gpa;
     uint64_t total_size;
     vmem_read_at_fn read_at;
+    vmem_write_at_fn write_at;
     vmem_destroy_fn destroy;
     void *ctx;
 };
@@ -35,6 +38,8 @@ struct vmem_space {
 /* mem.c */
 int      vmem_read_at(vmem_mem *m, uint64_t off, void *buf, size_t len,
                       size_t *got);
+int      vmem_write_at(vmem_mem *m, uint64_t off, const void *buf, size_t len,
+                       size_t *done);
 const vmem_segment *vmem_seg_for(const vmem_mem *m, uint64_t gpa);
 const vmem_segment *vmem_seg_after(const vmem_mem *m, uint64_t gpa);
 uint64_t vmem_mask_base(vmem_arch arch, uint64_t base);

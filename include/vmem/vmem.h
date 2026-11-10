@@ -87,10 +87,17 @@ vmem_mem *vmem_open_procmem_auto(int pid, uint64_t below_4g, int *err);
 /* Generic source.  read_at() must read `len` bytes at source offset `off`. */
 typedef int (*vmem_read_at_cb)(void *ctx, uint64_t off, void *buf, size_t len,
                                size_t *got);
+typedef int (*vmem_write_at_cb)(void *ctx, uint64_t off, const void *buf,
+                                size_t len, size_t *done);
 typedef void (*vmem_destroy_cb)(void *ctx);
 vmem_mem *vmem_open_custom(vmem_read_at_cb read_at, vmem_destroy_cb destroy,
                            void *ctx, const vmem_segment *segs, size_t nsegs,
                            vmem_arch arch, int *err);
+vmem_mem *vmem_open_custom_rw(vmem_read_at_cb read_at,
+                              vmem_write_at_cb write_at,
+                              vmem_destroy_cb destroy, void *ctx,
+                              const vmem_segment *segs, size_t nsegs,
+                              vmem_arch arch, int *err);
 
 void vmem_close(vmem_mem *m);
 
@@ -118,6 +125,9 @@ size_t vmem_read_phys(vmem_mem *m, uint64_t gpa, void *buf, size_t len);
 
 /* Returns 0 only if every byte was backed and read. */
 int vmem_read_phys_exact(vmem_mem *m, uint64_t gpa, void *buf, size_t len);
+
+/* Write to guest physical memory.  Only writable backends support this. */
+int vmem_write_phys(vmem_mem *m, uint64_t gpa, const void *buf, size_t len);
 
 uint8_t  vmem_phys_u8 (vmem_mem *m, uint64_t gpa);
 uint16_t vmem_phys_u16(vmem_mem *m, uint64_t gpa);
@@ -163,6 +173,8 @@ int vmem_translate(const vmem_space *s, uint64_t va, uint64_t *pa);
 size_t vmem_space_read(const vmem_space *s, uint64_t va, void *buf, size_t len);
 int    vmem_space_read_exact(const vmem_space *s, uint64_t va, void *buf,
                              size_t len);
+int    vmem_space_write(const vmem_space *s, uint64_t va, const void *buf,
+                        size_t len);
 
 uint8_t  vmem_space_u8 (const vmem_space *s, uint64_t va);
 uint16_t vmem_space_u16(const vmem_space *s, uint64_t va);

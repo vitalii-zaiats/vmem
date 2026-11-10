@@ -42,6 +42,21 @@ static int pm_read_at(void *ctx, uint64_t off, void *buf, size_t len,
     return VMEM_OK;
 }
 
+static int pm_write_at(void *ctx, uint64_t off, const void *buf, size_t len,
+                       size_t *done)
+{
+    pm_ctx *c = ctx;
+    size_t total = 0;
+    while (total < len) {
+        ssize_t n = pwrite(c->fd, (const char *)buf + total, len - total,
+                           (off_t)(off + total));
+        if (n <= 0) break;
+        total += (size_t)n;
+    }
+    *done = total;
+    return total == len ? VMEM_OK : VMEM_EIO;
+}
+
 static void pm_destroy(void *ctx)
 {
     pm_ctx *c = ctx;
@@ -56,8 +71,8 @@ static vmem_mem *open_with_fd(int fd, const vmem_segment *segs, size_t n,
     if (!c) { if (err) *err = VMEM_ENOMEM; return NULL; }
     c->fd = fd;
     {
-        vmem_mem *m = vmem_open_custom(pm_read_at, pm_destroy, c, segs, n,
-                                       VMEM_ARCH_UNKNOWN, err);
+        vmem_mem *m = vmem_open_custom_rw(pm_read_at, pm_write_at, pm_destroy,
+                                          c, segs, n, VMEM_ARCH_UNKNOWN, err);
         if (!m) { pm_destroy(c); return NULL; }
         return m;
     }
@@ -70,7 +85,8 @@ vmem_mem *vmem_open_procmem(int pid, const vmem_segment *segs, size_t nsegs,
     int fd;
     if (nsegs == 0) { if (err) *err = VMEM_EINVAL; return NULL; }
     snprintf(path, sizeof(path), "/proc/%d/mem", pid);
-    fd = open(path, O_RDONLY);
+    fd = open(path, O_RDWR);
+    if (fd < 0) fd = open(path, O_RDONLY); /* read-only fallback */
     if (fd < 0) { if (err) *err = VMEM_ENOENT; return NULL; }
     return open_with_fd(fd, segs, nsegs, err);
 }
@@ -162,7 +178,8 @@ vmem_mem *vmem_open_procmem_auto(int pid, uint64_t below_4g, int *err)
     if (fd >= 0) {
         char path[128];
         snprintf(path, sizeof(path), "/proc/%d/fd/%d", pid, fd);
-        fd = open(path, O_RDONLY);
+        fd = open(path, O_RDWR);
+        if (fd < 0) fd = open(path, O_RDONLY);
         if (fd < 0) { if (err) *err = VMEM_ENOENT; return NULL; }
         if (below_4g == 0 || below_4g >= size)
             below_4g = (size <= 0xE0000000ULL) ? size : 0x80000000ULL;

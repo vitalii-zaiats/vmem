@@ -194,6 +194,27 @@ int vmem_space_read_exact(const vmem_space *s, uint64_t va, void *buf,
     return VMEM_OK;
 }
 
+int vmem_space_write(const vmem_space *s, uint64_t va, const void *buf,
+                     size_t len)
+{
+    const uint8_t *in = buf;
+    size_t done = 0;
+
+    while (done < len) {
+        uint64_t cur = va + done;
+        size_t page_off = (size_t)(cur & 0xFFF);
+        size_t chunk = 0x1000 - page_off;
+        uint64_t pa;
+
+        if (chunk > len - done) chunk = len - done;
+        if (vmem_translate(s, cur, &pa) != 0) return VMEM_EIO;
+        if (vmem_write_phys(s->mem, pa, in + done, chunk) != VMEM_OK)
+            return VMEM_EIO;
+        done += chunk;
+    }
+    return VMEM_OK;
+}
+
 /* Fast path: the value is entirely inside one page.  Falls back to the
  * page-crossing loop for the rare unaligned-at-a-boundary case. */
 static void space_read_value(const vmem_space *s, uint64_t va, void *buf,

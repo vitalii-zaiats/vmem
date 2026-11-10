@@ -95,9 +95,11 @@ int vmem_read_at(vmem_mem *m, uint64_t off, void *buf, size_t len, size_t *got)
 /* construction / destruction                                        */
 /* ---------------------------------------------------------------- */
 
-vmem_mem *vmem_open_custom(vmem_read_at_cb read_at, vmem_destroy_cb destroy,
-                           void *ctx, const vmem_segment *segs, size_t nsegs,
-                           vmem_arch arch, int *err)
+static vmem_mem *
+open_custom_full(vmem_read_at_cb read_at, vmem_write_at_cb write_at,
+                 vmem_destroy_cb destroy, void *ctx,
+                 const vmem_segment *segs, size_t nsegs,
+                 vmem_arch arch, int *err)
 {
     vmem_mem *m = calloc(1, sizeof(*m));
     if (!m) { if (err) *err = VMEM_ENOMEM; return NULL; }
@@ -118,6 +120,7 @@ vmem_mem *vmem_open_custom(vmem_read_at_cb read_at, vmem_destroy_cb destroy,
 
     m->arch = arch;
     m->read_at = read_at;
+    m->write_at = write_at;
     m->destroy = destroy;
     m->ctx = ctx;
 
@@ -139,6 +142,60 @@ vmem_mem *vmem_open_custom(vmem_read_at_cb read_at, vmem_destroy_cb destroy,
     if (m->min_gpa == UINT64_MAX) m->min_gpa = 0;
     if (err) *err = VMEM_OK;
     return m;
+}
+
+vmem_mem *vmem_open_custom(vmem_read_at_cb read_at, vmem_destroy_cb destroy,
+                           void *ctx, const vmem_segment *segs, size_t nsegs,
+                           vmem_arch arch, int *err)
+{
+    return open_custom_full(read_at, NULL, destroy, ctx, segs, nsegs, arch,
+                            err);
+}
+
+vmem_mem *vmem_open_custom_rw(vmem_read_at_cb read_at,
+                              vmem_write_at_cb write_at,
+                              vmem_destroy_cb destroy, void *ctx,
+                              const vmem_segment *segs, size_t nsegs,
+                              vmem_arch arch, int *err)
+{
+    return open_custom_full(read_at, write_at, destroy, ctx, segs, nsegs, arch,
+                            err);
+}
+
+int vmem_write_at(vmem_mem *m, uint64_t off, const void *buf, size_t len,
+                  size_t *done)
+{
+    if (!m->write_at) {
+        *done = 0;
+        return VMEM_ENOTSUP;
+    }
+    return m->write_at(m->ctx, off, buf, len, done);
+}
+
+int vmem_write_phys(vmem_mem *m, uint64_t gpa, const void *buf, size_t len)
+{
+    const uint8_t *in = buf;
+    size_t written = 0;
+
+    while (written < len) {
+        uint64_t cur = gpa + written;
+        const vmem_segment *s = vmem_seg_for(m, cur);
+        size_t in_seg, chunk, done = 0;
+
+        if (!s) return VMEM_EIO;
+        in_seg = (size_t)(cur - s->gpa);
+        chunk = (size_t)(s->size - in_seg);
+        if (chunk > len - written) chunk = len - written;
+
+        /* Direct mmap segments are read-only in this build. */
+        if (s->ptr) return VMEM_ENOTSUP;
+
+        if (vmem_write_at(m, s->file_offset + in_seg, in + written, chunk,
+                          &done) != VMEM_OK || done != chunk)
+            return VMEM_EIO;
+        written += chunk;
+    }
+    return VMEM_OK;
 }
 
 void vmem_close(vmem_mem *m)

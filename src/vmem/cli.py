@@ -121,6 +121,31 @@ def cmd_read(args) -> int:
     return 0
 
 
+def cmd_write(args) -> int:
+    if args.hex is not None:
+        data = bytes.fromhex(args.hex)
+    elif args.string is not None:
+        data = args.string.encode()
+    else:
+        print("write: give --hex or --string", file=sys.stderr)
+        return 2
+
+    if args.pa is not None:
+        mem = _open(args)
+        mem.write(args.pa, data)
+        print(f"wrote {len(data)} bytes at pa {args.pa:#x}")
+        return 0
+
+    if args.va is None or (args.pid is None and args.name is None):
+        print("write: give --pa, or --pid/--name with --va", file=sys.stderr)
+        return 2
+    win = _windows(args)
+    target = args.pid if args.pid is not None else args.name
+    win.space(target).write(args.va, data)
+    print(f"wrote {len(data)} bytes at va {args.va:#x} (target {target})")
+    return 0
+
+
 def cmd_scan(args) -> int:
     mem = _open(args)
     if args.hex:
@@ -219,6 +244,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None)
     p.add_argument("--profile", default=None)
     p.set_defaults(func=cmd_read)
+
+    p = sub.add_parser("write", help="write physical or virtual memory")
+    core_args(p)
+    p.add_argument("--pa", type=lambda s: int(s, 0), default=None)
+    p.add_argument("--va", type=lambda s: int(s, 0), default=None)
+    p.add_argument("--pid", type=int, default=None)
+    p.add_argument("--name", default=None)
+    p.add_argument("--hex", default=None, help="bytes to write, as hex")
+    p.add_argument("--string", default=None, help="bytes to write, as text")
+    p.add_argument("--profile", default=None)
+    p.set_defaults(func=cmd_write)
 
     p = sub.add_parser("scan", help="scan physical memory")
     core_args(p)

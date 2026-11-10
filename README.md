@@ -126,6 +126,20 @@ too, start QEMU with `-object memory-backend-file,...,share=on
 -machine memory-backend=mem` and map the RAM file live; a full scan is then
 cheap and the anchor can be discovered on the fly.
 
+### Writing memory
+
+Writes work on the Linux `/proc/<pid>/mem` backend (needs root). They are not
+supported for ELF/core files or QMP.
+
+```sh
+uv run vmem write --vm-pid <qemu-pid> --arch x86_64 --below-4g 0x80000000 \
+  --pid <windows-pid> --va 0x... --hex 48656c6c6f2100
+```
+
+Python: `Space.write(va, data)` / `Memory.write(gpa, data)`, backed by
+`vmem_space_write()` / `vmem_write_phys()`; the procmem backend opens
+`/proc/<pid>/mem` with `O_RDWR`.
+
 ### VirtualBox
 
 `VBoxManage debugvm <vm> dumpvmcore --filename=core.elf` produces the same ELF
