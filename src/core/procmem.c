@@ -101,7 +101,9 @@ static int find_memfd(int pid, uint64_t *size_out)
         if (!strstr(target, "memory-backend-memfd") &&
             !strstr(target, "memfd:"))
             continue;
-        if (stat(linkpath, &st) != 0 || st.st_size <= 0) continue;
+        /* QEMU also memfd-backs its display surface; don't mistake a 1 MiB
+         * framebuffer for 14 GiB of guest RAM. */
+        if (stat(linkpath, &st) != 0 || st.st_size < (64LL << 20)) continue;
         if ((uint64_t)st.st_size > best_size) {
             best_size = (uint64_t)st.st_size;
             best = atoi(ent->d_name);
@@ -133,8 +135,10 @@ static int find_anon_region(int pid, uint64_t *start_out, uint64_t *size_out)
                    &start, &end, perms, &used) < 3)
             continue;
         if (perms[0] != 'r' || perms[1] != 'w') continue;
-        if (used > 0 && line[used] != '\n' && line[used] != '\0')
-            continue; /* file-backed */
+        /* accept unnamed anon mappings and kernel-named [anon:...] ones */
+        if (used > 0 && line[used] != '\n' && line[used] != '\0' &&
+            strncmp(line + used, "[anon:", 6) != 0)
+            continue;
         if (end <= start) continue;
         if (end - start > best_size) {
             best_size = end - start;

@@ -1,6 +1,7 @@
 name = "win11-25h2-x64"
 arch = "x86_64"
-# Values carried over from the original patchtool; unverified on this machine.
+# Verified against a live Win11 x64 guest booted from a physical SSD:
+# ntkrnlmp.pdb key B661C6FE72991D160FE37C48B8BC54701 (extracted from guest RAM).
 [offsets]
 directory_table_base = 0x028
 unique_process_id    = 0x1D0
@@ -9,3 +10,4 @@ image_file_name      = 0x338
 virtual_size         = 0x228
 active_threads       = 0x380
 peb                  = 0x2E0
+inherited_from_unique_process_id = 0x2D0
