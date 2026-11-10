@@ -12,3 +12,4 @@ dumps/
 .pytest_cache/
 tests/c/test_core
 *.dSYM/
+examples/*.exe
